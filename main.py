@@ -4,25 +4,61 @@ import os
 from telethon import TelegramClient
 import aiohttp
 
-# 🔐 ENV variables (set in Railway)
-api_id = int(os.getenv("22399717"))
-api_hash = os.getenv("32b9ab537dbb3fb3f649597f1c78660c")
-BOT_TOKEN = os.getenv("8365143773:AAEefgPg4PNdqcyw2eUt1IYQXfQVlDhvGwA")
-CHANNEL = os.getenv("@BachatBudy")
+# 🔐 Load ENV variables
+API_ID = os.getenv("API_ID")
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL = os.getenv("CHANNEL")
+
+# ❗ Safety check
+if not API_ID or not API_HASH or not BOT_TOKEN or not CHANNEL:
+    raise ValueError("❌ Missing environment variables")
+
+API_ID = int(API_ID)
 
 # 📡 Source channels
-channels = [
+SOURCE_CHANNELS = [
     "realearnkaro",
-    "offerzone4.0",
-    "offerzone3.0"
+    "offerzone4",
+    "offerzone3"
 ]
 
-# 🧠 Memory for duplicates (simple)
-posted_ids = set()
+# 🧠 Duplicate protection
+posted = set()
 
-client = TelegramClient("session", api_id, api_hash)
+client = TelegramClient("session", API_ID, API_HASH)
 
-# 📤 Send message to your channel
+# 🔗 Extract first link
+def extract_link(text):
+    links = re.findall(r'https?://\S+', text)
+    return links[0] if links else None
+
+# 💰 Add Amazon affiliate tag
+def add_amazon_tag(url):
+    if "amazon.in" in url:
+        if "tag=" not in url:
+            if "?" in url:
+                return url + "&tag=bachatbuddy07-21"
+            else:
+                return url + "?tag=bachatbuddy07-21"
+    return url
+
+# 🧠 Filter valid deals
+def is_valid(text):
+    text_low = text.lower()
+
+    if "₹" not in text:
+        return False
+
+    if any(x in text_low for x in ["expired", "over", "fake"]):
+        return False
+
+    if len(text) < 25:
+        return False
+
+    return True
+
+# 📤 Send message
 async def send_message(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
@@ -33,69 +69,58 @@ async def send_message(message):
             "disable_web_page_preview": False
         })
 
-# 🔗 Extract first link
-def extract_link(text):
-    links = re.findall(r'(https?://\S+)', text)
-    return links[0] if links else None
-
-# 🧠 Filter valid deals
-def is_valid_deal(text):
-    text = text.lower()
-
-    if "₹" not in text:
-        return False
-
-    if any(x in text for x in ["expired", "over", "fake"]):
-        return False
-
-    if len(text) < 25:
-        return False
-
-    return True
-
 # 🚀 Main loop
-async def main():
+async def run():
     await client.start()
-    print("✅ Bot started...")
+    print("✅ Bot started successfully")
 
     while True:
         try:
-            for ch in channels:
+            for ch in SOURCE_CHANNELS:
                 async for msg in client.iter_messages(ch, limit=5):
 
                     if not msg.text:
                         continue
 
-                    # ❌ Skip duplicates
-                    if msg.id in posted_ids:
+                    unique_id = f"{ch}_{msg.id}"
+                    if unique_id in posted:
                         continue
 
                     text = msg.text.strip()
 
-                    if not is_valid_deal(text):
+                    if not is_valid(text):
                         continue
 
                     link = extract_link(text)
                     if not link:
                         continue
 
-                    final_msg = f"{text}\n\n👉 Join {CHANNEL}"
+                    # 💰 Add affiliate
+                    link = add_amazon_tag(link)
+
+                    final_message = f"""🛍 LOOT DEAL
+
+{text}
+
+🔥 Grab Now:
+{link}
+
+👉 Join {CHANNEL}
+"""
 
                     print(f"📢 Posting from {ch}")
 
-                    await send_message(final_msg)
+                    await send_message(final_message)
 
-                    posted_ids.add(msg.id)
+                    posted.add(unique_id)
 
-                    # ⏱ Prevent Telegram rate limit
                     await asyncio.sleep(2)
 
-            # 🔁 Repeat every 60 sec
             await asyncio.sleep(60)
 
         except Exception as e:
             print("❌ Error:", e)
             await asyncio.sleep(10)
 
-# ▶️ Run bot
-asyncio.run(main())
+# ▶️ Start bot
+asyncio.run(run())
